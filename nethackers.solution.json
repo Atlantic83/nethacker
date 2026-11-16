@@ -1,0 +1,8 @@
+{
+  "root": ".",
+  "entrypoint": "bot.py",
+  "parents": [
+    {"repo": "github.com/daglar-dragomirov/nethacker", "commit": "a08f497e41973bf74f99ef147f327b08f02198a1"}
+  ],
+  "influences": []
+}
