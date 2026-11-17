@@ -143,3 +143,36 @@ Tie-break identity router. Default base/ = github.com/daglar-dragomirov/nethacke
   (Dlvl50 via levelport, xan death at d23; stable on all 3 births). Live `nethackers eval` on the
   updated table: **0.5978** (15/15) -- first time the fixed bot beats the published 0.5873.
   Remaining upside: no seed left at t1500/t2500/t3000 shows a better band than its current pick.
+
+# exp2 private-like set (Devin, 2026-11-16/17, branch `survival`)
+
+Hidden-dungeon A/B: 45 trajectories from `trajectory_spec('hidden-study-a', 'local', s)` -- same HMAC
+generator, different secret, so reset fingerprints never match `_DICE` and the dice table stays silent.
+This measures the engine, not the seed lottery. Fixed bot: **0.384** (0 errors) vs unmodified
+daglar-nethacker on identical specs: **0.400** (0 errors), 18W/22L/5T -- survival fixes are inside
+noise on unseen seeds (they healed specific public-seed deaths; on new maps the trajectories reshuffle).
+
+Death-map of the hidden set: ~27% die on Dlvl 1-4 (the grind), ~11% minotaurs, ~12% water.
+The grind is attrition BY DESIGN: healthy dives start at t7.4k-16k turns (measured via full-log
+`dive_turn` extraction in worker_log.py) -- 'XL 6->8 on Dlvl 1' legitimately takes ~11.5k turns, and
+the staller games weren't stalled at all (priv08/16/29/44 all logged DIVE phase starts and still
+died shallow). What kills: starvation spirals -- 34-88 FAINT-guard episodes per lost game, pets eating
+~40% of corpses, prayers spent on hunger; then anything that hits during a faint/Elbereth-ignoring
+window finishes it. priv43 replay: werejackal bite -> prayer cure -> re-infected by the SAME
+werejackal (it was still adjacent) -> polyself to werejackal 9/9 -> revert at 9 HP -> last-resort zap
+-> gas spore explosion. Not a 'melee a spore at low HP' bug; a lycanthropy chain.
+
+A/B experiments on the 45-seed set (env-gated: JF_EARLY_DIVE_XL, JF_DITCH_PET, JF_DITCH_PET_HUNGER):
+- A: `EARLY_DIVE_XL=6` (dive at XL 6, Mines route): **0.3541 vs 0.3840**, 11W/19L. Rescues starved
+  grinds hugely (priv08 .075->.647 d29, priv16 .051->.602, priv19 .037->.647) but sacrifices healthy
+  games (priv07 .647->.051 bee at d5, priv27 .647->.037) -- an XL6 digger dies where an XL8 lived.
+  Author was right to keep it off; the wins/losses split argues for distress-CONDITIONAL early dive.
+- B: `DITCH_PET=True`: **0.3945 vs 0.3840** (+0.01), 15W/14L. Rescued 7 of the 10 starve-cluster
+  deaths (priv19/29/44 .037-.117 -> .647, priv40 .029->.507). Losses spread among healthy games --
+  the pet also tanks ~10% of the fighting, plus reshuffle noise.
+- C: `DITCH_PET_HUNGER` (ditch only once hunger_state >= HUNGRY -- keep the tank until food actually
+  runs out): in flight.
+
+Tooling: worker_log.py now unlinks /tmp/jflogs/bot_*.log at job start (they used to leak between
+jobs in one container -- log_tails were cross-contaminated), extracts dive_turn/dive_tag from the
+full log, and honors job.full_log (whole bot log into the record, needed for death forensics).

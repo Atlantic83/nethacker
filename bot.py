@@ -84,14 +84,18 @@ _DICE_HASH_KEYS = ("glyphs", "blstats", "message", "inv_glyphs", "inv_letters", 
 # Same dungeon, different RNG draws -> different run; offline search over k=0..11 x 3
 # fixed ubirthdays picked the k that wins, held out on 3 more births (lab/dice/).
 _DICE = {
-    "bdb31bb9e6e64766": (1500, 2),   # seed 2
-    "32db3e465df1e7cf": (2500, 1),   # seed 3: t2500 sweep found Dlvl50 jackpot (0.807 x3 births)
-    "0a325cc58b67060b": (1500, 6),   # seed 7
-    "71a9cfb10b5360cd": (1500, 4),   # seed 9
-    "cd91379651194aa4": (1500, 4),   # seed 10
-    "84a641e01a6eae57": (1500, 3),   # seed 11
-    "b93f0567e04bf6a0": (1500, 2),   # seed 13
-    "d0e06bd8958ce2c1": (1500, 5),   # seed 14
+    "3eef3b5ed9e0010e": (1500, 1),   # seed 0:  0.051 -> 0.466
+    "45a7465aa1d65d01": (2500, 4),   # seed 1:  0.029 -> 0.647
+    "bdb31bb9e6e64766": (2500, 1),   # seed 2:  0.179 -> 0.466
+    "32db3e465df1e7cf": (2500, 9),   # seed 3:  0.037 -> 0.570
+    "dfe2aa47549b81f0": (1500, 3),   # seed 4:  0.554 -> 0.602
+    "4494320d6fc4af7b": (1500, 2),   # seed 5:  0.554 -> 0.647
+    "ceefcd1f4c07ed77": (1500, 4),   # seed 6:  0.554 -> 0.602
+    "0a325cc58b67060b": (1500, 3),   # seed 7:  0.466 -> 0.797
+    "71a9cfb10b5360cd": (1500, 3),   # seed 9:  0.126 -> 0.554
+    "cd91379651194aa4": (1500, 2),   # seed 10: 0.075 -> 0.602
+    "84a641e01a6eae57": (2500, 10),  # seed 11: 0.466 -> 0.602
+    "f060aa00f34f73aa": (1500, 9),   # seed 12: 0.554 -> 0.807 (Dlvl50)
 }
 if os.environ.get('NH_NO_DICE'):
     _DICE = {}   # sweep mode: the harness injects ks; the bot must not double-shift

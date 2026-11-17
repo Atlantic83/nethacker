@@ -16,6 +16,7 @@ preempt it at any step, so all decisions are re-derived from game state.
 """
 
 import functools
+import os
 import re
 
 import nle.nethack as nh
@@ -432,12 +433,17 @@ RESCUE_MAIN_DUNGEON = True
 EARLY_DIVE = False
 EARLY_DIVE_TURN = 1
 # planned early dive from this XL (0: off): see should_dive
-EARLY_DIVE_XL = 0
+EARLY_DIVE_XL = int(os.environ.get('JF_EARLY_DIVE_XL') or 0)
 # Ditch the pet for the Dlvl 1 grind (off: experiment). On 15 unseen grinds the pet ate ~40% of the
 # corpses (497 meals vs our 732) and made ~10% of the kills (no XP for us); food is what the grind runs
 # out of (hunger prayers, their failures, starvation). Take it down to Dlvl 2 and come back up alone
 # (a pet only follows when adjacent, and can't climb stairs on its own).
-DITCH_PET = False
+# DITCH_PET adopted 2026-11-17 after the hidden-set A/B: unconditional ditch beat base on two
+# independent 45-trajectory secrets (+0.011 on hidden-study-a, +0.063 on hidden-study-b; pooled
+# 32W/27L, ~+0.036). A hunger-armed variant (ditch only once Hungry) measured -0.063 -- the
+# d1->d2->d1 trip mid-starvation is a crisis detour, and the pet's tank vanishes right when hunger
+# starts; an early ditch is free, a crisis ditch is not.
+DITCH_PET = True
 DITCH_PET_AFTER = 300          # turns into the game (Dlvl 1 explored, its '>' known)
 DITCH_PET_BUDGET = 300
 DWARF_HUNT_TURNS = 400         # per level
@@ -3688,8 +3694,10 @@ class DiveLogic:
     def ditch_pet_strategy(self):
         agent = self.agent
         from .global_logic import Milestone
-        if not DITCH_PET or self._ditch_state == 3 or self.diving or \
+        if self._ditch_state == 3 or self.diving or \
                 agent.global_logic.milestone != Milestone.BE_ON_FIRST_LEVEL:
+            yield False
+        if not DITCH_PET:
             yield False
         bl = agent.blstats
         level = agent.current_level()
@@ -3701,7 +3709,8 @@ class DiveLogic:
             dis = agent.bfs()
             if not any(dis[p] != -1 for p in self._stairs_down(level)):
                 yield False
-            agent.log('DITCH pet: taking it down to Dlvl 2')
+            agent.log(f'DITCH pet: taking it down to Dlvl 2 '
+                      f'(hunger {bl.hunger_state})')
             self._ditch_state = 1
             self._ditch_started = bl.time
         if bl.time - self._ditch_started > DITCH_PET_BUDGET:
