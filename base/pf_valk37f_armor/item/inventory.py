@@ -889,7 +889,7 @@ class Inventory:
                 while ' eat it? [ynq]' in self.agent.message or \
                         ' eat one? [ynq]' in self.agent.message:
                     if item.text in self.agent.message:
-                        self.type_text('y')
+                        self.agent.type_text('y')
                         return True
                 if "What do you want to eat?" in self.agent.message or \
                         "You don't have anything to eat." in self.agent.message:

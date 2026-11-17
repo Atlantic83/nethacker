@@ -112,6 +112,7 @@ class Agent:
         self._fight_ignored = {}       # (level key, glyph) -> [y, x, until turn, anywhere]: monsters fight2 let go
         self._fight_moves = []         # (turn, level key, position) of fight2's consecutive moves (FIGHT_STALL_MOVES)
         self._squeeze_refused = None   # ROBUST_FIXES2: (turn, our weight estimate or None) of a refused squeeze
+        self._corpse_eat_failed = {}   # (level key, y, x, monster_id) -> turn the eat prompt refused a tracked corpse
 
         self.last_cast_fail_turn = defaultdict(lambda: -float('inf'))
 
@@ -2584,6 +2585,8 @@ class Agent:
                     continue
                 if self.reserve_corpse(monster_id):
                     continue
+                if self._corpse_refused(level.key(), y, x, monster_id):
+                    continue
                 if self._is_corpse_editable(monster_id, corpse_age):
                     to_eat.append((y, x, monster_id))
 
@@ -2599,6 +2602,8 @@ class Agent:
                     if max_age is not None and self.blstats.time - corpse_age > max_age:
                         continue
                     if self.reserve_corpse(monster_id):
+                        continue
+                    if self._corpse_refused(level.key(), y, x, monster_id):
                         continue
                     if self._is_corpse_editable(monster_id, corpse_age):
                         to_eat.append((y, x, monster_id))
@@ -2634,13 +2639,25 @@ class Agent:
                         if not yielded:
                             yielded = True
                             yield True
-                        self.inventory.eat(item)
+                        try:
+                            self.inventory.eat(item)
+                        except AgentPanic:
+                            # the game didn't offer it (a pet ate it, we can't reach it, the prompt
+                            # didn't match): the map may keep showing the corpse, so without a backoff
+                            # we re-target it and panic forever (~60 lost turns a pass, seen x12-78/game)
+                            self._corpse_eat_failed[(level.key(), target_y, target_x, monster_id)] = self.blstats.time
+                            self.log(f'EAT corpse {monster_id} at {(target_y, target_x)} refused; backoff')
+                            return
 
             if not yielded:
                 del level.corpses_to_eat[target_y, target_x][monster_id]
 
         if not yielded:
             yield False
+
+    def _corpse_refused(self, level_key, y, x, monster_id):
+        # the eat prompt refused this corpse recently: don't re-walk to it every replan
+        return self.blstats.time - self._corpse_eat_failed.get((level_key, y, x, monster_id), -10 ** 9) < 100
 
     def should_cast_heal(self):
         # TODO: consider casting for other classes

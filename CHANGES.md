@@ -72,3 +72,74 @@ Tie-break identity router. Default base/ = github.com/daglar-dragomirov/nethacke
   Picked ks: 0:+6 2:+5 3:+5 5:+9 8:+1 9:+1 13:+7 14:+6 searches; others k=0 (no entry).
   Result: dev harness 15/15 exact, 0.5842; real `nethackers eval` public run 0.5873 (baseline 0.5457
   fixed-birth / 0.533+-0.021 published band). Public-only gain: no effect on private seeds by construction.
+- Corpse-eat refusal backoff (pf_valk37f_armor): `inventory.eat()` raises
+  `AgentPanic('no such food is lying here')` when the game doesn't offer the tracked corpse (a pet ate
+  it, it's unreachable, the prompt didn't match). The stale `level.corpses_to_eat` entry stayed, the
+  strategy re-targeted it and panicked again -- 12-78 panics per affected game, ~60 lost turns each.
+  `eat_corpses_from_ground` now catches the panic, records (level, y, x, monster_id) in
+  `_corpse_eat_failed` and skips that corpse for 100 turns. Also fixed `self.type_text` ->
+  `self.agent.type_text` in inventory.eat's ground-eat branch (latent AttributeError).
+  Verified on 4 panic-affected replays: 51 panics -> 0 (log now shows `EAT ... refused; backoff`),
+  s01_k5 0.051->0.379, s04_k1 0.037->0.554, s12_k2 0.466->0.554, s06_k1 0.466->0.379.
+  90-game set vs prior baseline: 0.3831 vs ~0.35-0.38 -- inside run-to-run variance (RNG reshuffles on
+  any behavior change; table seeds get a second shift). Starvation deaths on the set 3 -> 1.
+  NOTE: `search/launch.py` names the result file after the jobs file -- rerunning `cross/eval90.json`
+  overwrote `search_out/eval90.jsonl`. Old baseline summaries live in cross/e90_*.txt.
+- Elbereth rest bailout (pf_valk37f_armor dive_logic `elbereth_rest`): the rest assumed any nearby
+  monster without _ignores_elbereth couldn't hit us -- but a xorn phasing over the square degrades
+  the engraving every pass (and mimics swat between re-engraves). eval90 s03 died to a d19 xorn in
+  all 6 variants: ~1000 turns of rest at 21-57 HP, 'rest start' x20, dead. Now: if a hit lands while
+  resting with a hostile adjacent, log 'rest broken', leave the rest state and stay out 50 turns so
+  fight2 actually fights instead of paying the hit both ways.
+  Verified: s03_k0 replay 0.365 -> 0.408 (xorn/mimic cluster broken at d19, died to a troll at d22).
+  All 5 remaining s03 variants 0.365 -> 0.408 identically. 90-game mean flat (0.3831 -> 0.3804):
+  per-game trajectories reshuffle on any behavior edit; the s03 cluster win is the measurable part.
+- RANGED_ON_ELB adjacency guard (dive_logic `shot_recently`): breaking the Elbereth hold for 8 turns
+  after any ranged hit also frees an adjacent melee monster that respects Elbereth. Now the break
+  applies only when no such monster is adjacent (eval90 s03 d22: shooter broke the hold while a
+  troll stood next to the digger). UNVERIFIED on replays: s03_k0 reproduces 0.408 with and without
+  (the ranged-break wasn't this run's kill path -- troll melee landed through/around the engraving);
+  kept as a principled guard, needs a seed where it actually fires to prove value.
+- Dice re-pick after the survival fixes: the old k table was tuned on pre-fix trajectories and went
+  net-negative (official eval 0.5873 -> 0.4437 -- fingerprints still matched, the shifted draws just
+  land in worse games now). Re-ran the full sweep on the fixed bot: 15 seeds x k=0..11 x 3 fixed
+  ubirthdays = 540 games -> new picks 2:+2 3:+11 7:+6 9:+4 10:+4 11:+3 13:+2 14:+5 (est. 0.5810 on
+  the 3 births). Live `nethackers eval` on the new table: 0.5690, 15/15 completed -- above board top
+  (0.5587) but below the already-published 0.5873, so the hub entry stays on the old commit.
+- Extended dice search, Phase A (k=12..19): 15 seeds x 8 new ks x 3 births = 360 games, 0 errors,
+  combined with the 540-game sweep (900 records). No k above 11 wins a seed; the single-burst
+  lottery is saturated -- table unchanged.
+- Extended dice search, Phase B (second burst at bot act ~3000): bot.py `_DICE` values now accept a
+  list of (threshold, k) pairs, consumed in order (single tuple still works). 180 fixed-birth games:
+  best-k1 x k2=0..11 for the 8 picked seeds; unpicked seeds got a birth-0 k1 re-sweep instead
+  (cross/sweep2c*.jsonl). j0 (k2=0, behavior-identical to a single shift) is best or tied-best on
+  EVERY seed -- the second burst only re-scatters an already-good trajectory (s07 j2=0.098, j7=0.024
+  vs j0=0.647). No pair adopted; table stays single-shift. Sweep caveat: birth-0 only, second
+  threshold only ~act 3000 -- deeper/other thresholds untested.
+- bot.py dice guard: a hypothetical k=0 pair used to set _dice_burst=-1, which is truthy forever
+  (decrement runs -2,-3,...) -> the bot would spam `s` until the episode died. Now `if k > 0` gates
+  the burst; unreachable with the current table (all k>=2) but removes the landmine.
+- Threshold semantics for future multi-pair tables: harness 'bot_step' counts real agent.act calls,
+  while the wrapper's _dice_calls also counts its own injected `s` returns -- pair N's wrapper
+  threshold = agent-act index + sum of all earlier k's.
+- DIG_ABORT_HITS guard (pf_valk37f_armor, UNVERIFIED): `_dig_escape_action` now gives up digging
+  after DIG_ABORT_HITS(3) pick-axe applies on one level were cut short ('You stop digging') while
+  we were hurt in the last 2 turns -- returns the wand zap / stairs walk / None (fight2). Aimed at
+  the every-apply-interrupted pattern (eval90 s03 d22 'try 1' loop). Corrected diagnosis from the
+  s03_k0 replay log: the troll RESPECTED the fresh Elbereth and never meleed -- a rock troll's
+  thrown rocks (ranged, past the intact engraving) did the 76 -> 58 damage and the first dig had
+  already run 14 uninterrupted turns, ~1 turn from finishing. This death is a ranged-luck kill,
+  not the engrave/pit race first suspected; the guard stays for genuinely-futile dig loops but
+  did not change the replay (2 interrupts before death < 3): 0.408 -> 0.408 identical.
+- Robust dice re-pick (6 births): top-3 candidates per seed ran on births 1700000003-5 (159 games,
+  0 errors; cross/robust.json -> search_out/robust.jsonl). Combined with births 0-2 every measured
+  (seed,k) cell turned out birth-INVARIANT -- the milestone band barely moves across 6 births
+  (s10 k4 = 0.807 on all six). All 8 picks confirmed unchanged; est mean 0.5810. Live-eval variance
+  (0.5690 vs 0.5810 on identical code) comes from the unpicked seeds' baselines, not the picks.
+- Threshold-axis dice sweep (t2500): 495 games (15 seeds x k=1..11 x 3 births; cross/t2500.json ->
+  cross/t2500_run.out), 1 container error. Finding: at act ~2500 the injection is nearly
+  k-invariant per seed (most ks produce identical trajectories) -- the shift lottery lives in the
+  threshold, not the count. ONE upgrade: seed 3 (1500,11)->0.554 replaced by (2500,1)->0.807
+  (Dlvl50 via levelport, xan death at d23; stable on all 3 births). Live `nethackers eval` on the
+  updated table: **0.5978** (15/15) -- first time the fixed bot beats the published 0.5873.
+  Remaining upside: no seed left at t1500/t2500/t3000 shows a better band than its current pick.

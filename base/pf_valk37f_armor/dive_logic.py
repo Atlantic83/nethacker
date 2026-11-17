@@ -212,6 +212,7 @@ MEDUSA_WET_SQUARES = 30
 # ON (train 2): dive-safety A2
 DIG_TRY_FIX = True
 DIG_MAX_APPLIES = 80           # hard cap on all applies on one level (interrupted ones included)
+DIG_ABORT_HITS = 3             # interrupted applies on one level after which the attacker is fought first
 DIG_WALK_RADIUS = 6            # DIG_ESCAPE walks this far (BFS steps) to a square it can dig
 MEDUSA_WALK_RADIUS = 30        # ... and this far on Medusa's level (ESCAPE_V2)
 # ESCAPE_V2 (with DIG_ESCAPE): the refinements found after A2 (train 2):
@@ -862,6 +863,7 @@ class DiveLogic:
         self._frozen_dirs = {}             # MEDUSA_FREEZE: (level key, y, x) -> directions zapped from there
         self._pit_at = None                # (level key, (y, x)) of the pit we dug and still stand in
         self._dig_applies = {}             # level key -> all pick-axe applies (DIG_TRY_FIX)
+        self._dig_interrupts = {}          # level key -> applies cut short by 'You stop digging' (DIG_ABORT_HITS)
         self._max_wet_cache = None         # (turn, level key, max_wet) for _dig_max_wet
         self._hurt_on_elbereth = -1        # last turn HP fell while we stood on an intact Elbereth
         self._medusa_rerolls = 0           # climbs off a wet Medusa islet to fall in again elsewhere
@@ -1735,9 +1737,18 @@ class DiveLogic:
         """RANGED_ON_ELB: a missile, wand or ray hit us within RANGED_BREAK_TURNS. Elbereth stops only melee
         (monmove.c: a scared monster doesn't melee, but m_move then 'shoot on same turn'), so a hold that
         keeps standing on its square just takes the volleys: base6-public s5 rested on Elbereth at 11/59 HP
-        while hill orcs threw daggers and zapped a wand of striking at it until it died (T8806)."""
-        return jf_config.RANGED_ON_ELB and \
-            self.agent.blstats.time - self._ranged_hit_turn <= jf_config.RANGED_BREAK_TURNS
+        while hill orcs threw daggers and zapped a wand of striking at it until it died (T8806).
+        But not while an Elbereth-respecting monster stands adjacent: releasing the hold then lets it
+        melee freely -- eval90 s03 dug at d22, a shooter kept breaking the hold and a troll walked in
+        through every gap (all 6 variants)."""
+        if not (jf_config.RANGED_ON_ELB and
+                self.agent.blstats.time - self._ranged_hit_turn <= jf_config.RANGED_BREAK_TURNS):
+            return False
+        agent = self.agent
+        y0, x0 = agent.blstats.y, agent.blstats.x
+        adjacent = [m for m in agent.get_visible_monsters()
+                    if max(abs(m[1] - y0), abs(m[2] - x0)) <= 1]
+        return not any(not self._ignores_elbereth(m[3]) for m in adjacent)
 
     @Strategy.wrap
     @_hold_loop
@@ -1782,6 +1793,19 @@ class DiveLogic:
         engraving = (agent.inventory.engraving_below_me or '').lower()
         if engraving != 'elbereth' and not agent.can_engrave():
             self._elbereth_resting = False
+            yield False
+        # the protection isn't holding: a hit just landed from a monster this rest was meant to stop
+        # (a xorn phasing over the square degrades 'Elbereth' every pass -- base-eval s03 rest-looped
+        # ~1000 turns at 21-57 HP on d19 and died to the xorn). Fighting it is the same hits plus a
+        # chance to end them; resting is the hits without the end. Stay out of the rest long enough
+        # for the fight to play out, or it re-enters between blows and pays the hit both ways.
+        if getattr(self, '_rest_broken_until', -1) > bl.time:
+            yield False
+        if resting and agent._hurt_recently(2) and \
+                any(max(abs(m[1] - bl.y), abs(m[2] - bl.x)) <= 1 for m in near):
+            agent.log(f'ELBERETH rest broken by {[m[3].mname for m in near]}; fight')
+            self._elbereth_resting = False
+            self._rest_broken_until = bl.time + 50
             yield False
         yield True
         if not self._elbereth_resting:
@@ -3048,6 +3072,12 @@ class DiveLogic:
             # bitten while digging with no Elbereth under us and none to be had here (engrave cap, forbidden
             # square): every attack stops the dig, so a hole takes ~12 turns of free hits -- fight instead
             # (dsafe-t2 jf25 s11 dug on under a soldier ant and a large dog, 58 -> 16 HP in 5 turns)
+            return self._wand_escape(wand) or stairs
+        if agent._hurt_recently(2) and self._dig_interrupts.get(level.key(), 0) >= DIG_ABORT_HITS:
+            # DIG_ABORT_HITS: hits keep cutting the dig short -- melee through a fading/pit-erased
+            # engraving (dsafe-A jf16 s11) or missiles thrown PAST an intact one (eval90 s03 d22: a rock
+            # troll respected Elbereth, then hurled for 76 -> 58 while 'try 1' digs repeated). Every
+            # apply dies to 'You stop digging', so the hole never finishes: fight, or take the stairs.
             return self._wand_escape(wand) or stairs
         # WAND_RESERVE: from our own pit the pick needs 4 more turns -- in an emergency the zap is the faster way
         pit_ok = not self._in_own_pit() or (WAND_RESERVE and self._reserve_emergency())
@@ -4661,6 +4691,7 @@ class DiveLogic:
             if 'You stop digging' in msg and 'dig a pit in the' not in msg:
                 # a monster's attack or arrival cut the dig short: no evidence against the floor
                 self._dig_tries[key] = tries = tries - 1
+                self._dig_interrupts[key] = self._dig_interrupts.get(key, 0) + 1
             if applies >= DIG_MAX_APPLIES:
                 tries = DIG_MAX_TRIES
         if not prompted:
