@@ -612,8 +612,9 @@ def _in_room(mx, my, pad=0):
     return any(x0 - pad <= mx <= x1 + pad and y0 - pad <= my <= y1 + pad for x0, y0, x1, y1 in DANGER_ROOMS)
 
 
-def _xorn_path(castle, start):
-    """Cheapest way for a wall-walker from start to a trap door (40..55,08): through walls, doors and rock, around the
+def _xorn_path(castle, start, goals=None, blocked=(), moat_cost=20, moat_side_cost=4):
+    """Cheapest way for a wall-walker from start to a trap door (40..55,08) -- or to `goals` (CASTLE_TREASURY: the
+    tower cells), never through `blocked` (the trap doors on the way there): through walls, doors and rock, around the
     rooms with monsters (a xorn in the wall beside a room is in reach of it) and well away from the moat. The solid
     stone above and below the castle map (level rows 1-2 and 20, map y -2..-1 and 17; bound_digging makes it
     undiggable, not unpassable: hack.c may_passwall only refuses W_NONPASSWALL, which castle.des never sets) runs the
@@ -634,18 +635,19 @@ def _xorn_path(castle, start):
         elif _in_room(mx, my, pad=1):
             c += 12
         if map_char(mx, my) == '}':
-            c += 20
+            c += moat_cost
         elif any(map_char(mx + dx, my + dy) == '}' for dx, dy in DIRS8):
             # beside the moat: its sharks and eels bite into the wall (harness cfp-xorn1 lost 36 of 44 form HP along
             # row 2, next to the moat's row 1; the corridor on row 3 has walls on both sides)
-            c += 4
+            c += moat_side_cost
         if p in mons:
             c += 60
         elif any((mx + dx, my + dy) in mons for dx, dy in DIRS8):
             c += 8
         return c
 
-    goals = set(TRAPDOORS)
+    goals = set(TRAPDOORS if goals is None else goals)
+    blocked = set(blocked)
     dist = {start: 0}
     prev = {}
     heap = [(0, start)]
@@ -661,6 +663,8 @@ def _xorn_path(castle, start):
         for dx, dy in DIRS8:
             n = (p[0] + dx, p[1] + dy)
             if not (-8 <= n[0] <= 70 and -2 <= n[1] <= 17):
+                continue
+            if n in blocked:
                 continue
             nd = d + cost(n)
             if nd < dist.get(n, 1 << 30):
@@ -692,8 +696,20 @@ def xorn_strategy(dive):
         same = 0
         while steps < 600 and wallwalker(agent) and agent.current_level().key() == castle.castle_key:
             steps += 1
+            # CASTLE_TREASURY (castle_treasury.py, from vlomshakov f84a81b): first through the walls to the tower
+            # cells, whose chest holds the castle's wand of wishing (castle.des) -- a bounded detour that hands
+            # back to this walk on success or failure
+            if jf_config.CASTLE_TREASURY:
+                from . import castle_treasury
+                if castle_treasury.step(castle):
+                    continue
             pos = castle._pos()
-            path = _xorn_path(castle, pos)
+            if jf_config.CASTLE_TREASURY and getattr(castle, '_treasury', None) is not None:
+                # after the tower detour: the way on from an east tower runs along the corner moat (real arm jf16 s0:
+                # the wand in hand, 38 -> 15 form HP at (55,1) beside it in 2 turns); inside the castle instead
+                path = _xorn_path(castle, pos, moat_cost=60, moat_side_cost=20)
+            else:
+                path = _xorn_path(castle, pos)
             if not path or len(path) < 2:
                 _log(castle, f'xorn: no way to a trap door from {pos}')
                 agent.search()

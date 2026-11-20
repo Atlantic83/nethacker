@@ -154,7 +154,11 @@ class AutoAscendDriver:
         self._fallback_action = _ACTION_TO_INDEX[int(autoascend_agent.A.Command.ESC)]
 
     def reset(self, initial_observation: Mapping[str, Any]) -> None:
-        del initial_observation
+        self._initial_message = None
+        try:
+            self._initial_message = bytes(initial_observation["message"]).split(b"\0")[0].decode("latin-1")
+        except Exception:
+            self._initial_message = None
         self.close()
         self._restarts = 0
         self._episode_start = time.monotonic()
@@ -170,6 +174,8 @@ class AutoAscendDriver:
         self._agent.resumed_game = not fresh_game
         if not fresh_game and previous is not None:
             self._agent.previous_character = previous.character
+        if getattr(self._agent, 'prayer_model', None) is not None:
+            self._agent.prayer_model.initial_message(getattr(self, '_initial_message', None))
         self._thread = threading.Thread(target=self._run_agent, args=(self._agent,), name="autoascend",
                                         daemon=True)
         self._thread.start()

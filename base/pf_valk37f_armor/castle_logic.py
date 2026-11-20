@@ -176,6 +176,7 @@ class CastlePassage:
         self._waiting = False          # floating on a potion by the closed door: wait it out at SAFE_EAST
         self._cold_glyphs = set()      # unknown horns that froze the moat when blown
         self._held_turn = None         # last turn a sea monster held us ('swings itself around you')
+        self._held_msg = ''            # ... and the message that said so (EEL_WAND: it names the holder)
         self._resting = False          # a rest stop on the way across (lift off, Elbereth, search)
         self._last_dnum = None         # dungeon of the previous step (Gehennom -> Dungeons: the castle)
         self._half = 'north'           # CASTLE_SEA_SWITCH: the way round ('north' | 'south')
@@ -1326,6 +1327,35 @@ class CastlePassage:
         agent.search(3)
         return True
 
+    def _zap_holder_wand(self):
+        """EEL_WAND: a known wand of teleportation or cold zapped at the sea monster holding us, the one the
+        grab message names (a shark beside it never holds) -- the release where the levitating case can't
+        engrave at all (castle_cross.held_elbereth refuses), Elbereth on foot works ~72% of the time and melee
+        is a drowning race we usually lose (hb26: grabbed at 38/67 on the east moat, three 'cannot escape' hits,
+        dead). No sleep: its ray bounces back onto us, who are not sleep resistant (see dive._eel_wand)."""
+        from . import castle_power, power
+        agent = self.agent
+
+        def holds(p):
+            glyph = agent.glyphs[to_bot(*p)]
+            return nh.glyph_is_monster(glyph) and nh.permonst(nh.glyph_to_mon(glyph)).mname in self._held_msg
+        targets = [p for p in self._sea_adjacent() if holds(p)]
+        if not targets:
+            return False
+        for name in ('teleportation', 'cold'):
+            obj = castle_power._W[name]
+            wand = next((it for it in agent.inventory.items
+                         if it.is_wand() and it.is_unambiguous() and it.object == obj and
+                         not power._empty(agent, it)), None)
+            if wand is None:
+                continue
+            y, x = to_bot(*targets[0])
+            self._set_state(f'held: zapping {name} at {targets[0]}')
+            self._log(f'held at {self._pos()}: EEL_WAND zap {name} at {targets[0]}')
+            agent.zap(wand, agent.calc_direction(agent.blstats.y, agent.blstats.x, y, x))
+            return True
+        return False
+
     def _attack_holder(self):
         """A giant eel wrapped round us drowns us with its next touch (mhitu.c AD_WRAP; levitation doesn't
         help), and walking away escapes only 1 time in 13: hit it instead (jf27 seed 0: drowned after
@@ -1359,12 +1389,15 @@ class CastlePassage:
         msg = agent.message
         if 'swings itself around you' in msg or 'cannot escape from' in msg:
             self._held_turn = agent.blstats.time
+            self._held_msg = msg
         if self._held_turn is not None and agent.blstats.time - self._held_turn <= 3:
             if jf_config.CFP_EEL:
                 # on foot a held hero writes Elbereth (the holder lets go), see castle_cross.held_elbereth
                 from . import castle_cross
                 if castle_cross.held_elbereth(self):
                     return
+            if jf_config.EEL_WAND and self._zap_holder_wand():
+                return
             if self._attack_holder():
                 return
         if self._stuck > 80:

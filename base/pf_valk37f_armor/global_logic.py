@@ -1129,6 +1129,11 @@ class GlobalLogic:
             .preempt(self.agent, [
                 self.landing.strategy(),
             ])
+            # HUNGER_DEEP: on the castle level eat what we carry when Hungry -- above fight2 and the castle
+            # crossing, which kept a castle arrival from its rations until it fainted on the moat's edge
+            .preempt(self.agent, [
+                self.agent.eat_deep().condition(lambda: jf_config.HUNGER_DEEP),
+            ])
             # crossing the castle moat (castle_logic.py): above the survival layer and the fight, which
             # would drag a levitating hero back to land or up the stairs
             .preempt(self.agent, [
@@ -1155,6 +1160,13 @@ class GlobalLogic:
             # from Gehennom, Dlvl 50); the castle gamble once the lift plan gave up -- above the fight and the crossing
             .preempt(self.agent, [
                 power_route.levelport_strategy(self.agent),
+            ])
+            # deep-arrivals (DEEP_ITEMS, dive_logic.deep_items_strategy): on Medusa's level a unicorn horn when blind, a
+            # scare instrument or unknown horn when hostiles press us, a known scroll of scare monster under the dig
+            # square; a scroll of charging on an empty wand of digging -- below the emergency (a due prayer first),
+            # above dig_first, the Elbereth rest and fight2
+            .preempt(self.agent, [
+                self.dive.deep_items_strategy().condition(lambda: jf_config.DEEP_ITEMS),
             ])
             .preempt(self.agent, [
                 self.agent.emergency_strategy(),

@@ -49,6 +49,8 @@ FAINT_PRAYER_GAP = 1100
 # AutoAscend's periodic 'eat corpses' preempt was meant to walk to edible corpses on the level, but
 # only_below_me defaults to True, so it only ever eats what lies underfoot; the kills' corpses beside
 # us go to the pet (it ate ~40% of the grind's corpses)
+# OFF stays (eat_ab_full 90p, post-DITCH_PET): 0.4083 -> 0.3691 (-0.0392), both sets negative, faints
+# 2029 -> 2516 -- the corpse walks cost more nutrition than they return (same verdict as LICHEN_RESERVE)
 EAT_NEARBY_CORPSES = False
 # Weak/Fainting with nothing to eat and no safe prayer yet: wait on Elbereth instead of wandering (many
 # grind deaths came while fainted: rats, bats, ants; nearly everything on Dlvl 1 respects Elbereth).
@@ -467,6 +469,18 @@ BEARTRAP_ESCAPE = True
 # rat's HP and starved), and drop the load a rat can't carry so it can eat (public s4 starved Overloaded
 # with 5 food items)
 LYCAN_FIXES = True
+# LYCAN_AVOID (off, experiment): for LYCAN_AVOID_TURNS after a 'You feel purified.' cure, melee/kick on an
+# adjacent were-family monster is demoted below moves, ranged hits and a fresh Elbereth -- the reinfection
+# comes from its bite, not our swing (privB/priv43: cured t6913, reinfected t6914; hb36: 3 infections).
+# Windowed because a same-speed chaser cannot be out-walked forever
+LYCAN_AVOID = False
+LYCAN_AVOID_TURNS = 200
+# EEL_WAND (off, experiment): held by a sea monster, a KNOWN wand of teleportation or cold zapped at the
+# holder the grab message names frees us -- castle_cross.held_elbereth refuses while levitating (the castle
+# moat case, hb26 drowned at 38/67 to three 'cannot escape' turns) and works only ~72% on foot; the melee
+# fallback is a drowning race the bot usually loses. On foot the free Elbereth still goes first. No wand of
+# sleep: its ray bounces back onto a hero who is not sleep resistant
+EEL_WAND = False
 # no lycanthropy cure prayer while Hungry without food (wait for the Weak hunger prayer; see cure_disease)
 LYCAN_CURE_WAIT = False
 # were_unload drops a were form's load whenever Overtaxed or worse, not only when Weak with food to eat
@@ -511,7 +525,7 @@ LR_ELBERETH = False
 # the Elbereth rest never hides from a lone monster one blow kills (difficulty <= 2, not fast), at any HP
 REST_FIGHT_WEAK = False
 # never kill a gas spore whose blast reaches any @ (or anything in Minetown); its melee is filtered out of fight2
-SPORE_SAFE = False
+SPORE_SAFE = True
 # hypothesis: SPORE_TRAP_FIX (fight_heur.melee_monster_priority) -- the trapped-by-a-gas-spore melee tested
 #   `hitpoints / max_hitpoints`, a ratio that is truthy at any HP above 0, so a dwarf boxed in by a lone spore hit it
 #   at any HP and ate the 4d6 (up to 24) blast. A spore never attacks (its only attack is AT_BOOM, on death), so
@@ -524,6 +538,19 @@ SPORE_TRAP_FIX = True
 # a floating eye is hit blindfolded (blindfold/towel on, F-attack, off again), else by a throw, else as before
 # ON (train 3.4, grind-combat A063): blindfold/towel on before meleeing a floating eye (jf16 s12 replay: no freeze, no rock-mole death)
 FEYE_BLIND = True
+# FEYE_TELE (ported from nhbot): once telepathic ('You feel a strange mental acuity.'), fight2 no longer melees a
+# floating eye it can see except blindfolded; boxed in, it engraves Elbereth to scare the eye off and only after
+# FEYE_TELE_BOXED turns hits it anyway (full HP, fed, alone). An eye corpse always grants telepathy (eat.c), the
+# one thing an eye kill is worth
+# ON (feye_ab_full 90p): with FEYE_GUARD, eye freezes 10 -> 0, fatal gazes 3 -> 0, telepathy 53/90 vs 0/90
+FEYE_TELE = True
+FEYE_TELE_BOXED = 150
+# FEYE_GUARD (tightened nhbot port): before telepathy too, a visible floating eye is never meleed in the open -- a
+# speed-1 eye can always be walked around, and the smoke A/B showed nhbot's conditional melee still froze and
+# killed (priv18, hb44 identical streams). Only the boxed-in path (Elbereth, then a full-HP/fed/alone hit after
+# FEYE_TELE_BOXED turns) may hit it, which still pays the corpse and telepathy
+# ON (feye_ab_full 90p): +0.0124 pooled (A -0.002, B +0.027), W/L/T 4/3/83, freezes/gazes -> 0, no stalls
+FEYE_GUARD = True
 # a missile/wand/ray hit breaks the Elbereth holds (rest, faint guard/shelter, demon vigil) and fight2's
 # wait-on-Elbereth for RANGED_BREAK_TURNS turns: fight2 then closes in on a weak shooter or leaves its line
 # ON (train 3.4, A063): a hold breaks when shot/zapped from range; guard vs base7 45 amd64 0.446 vs 0.415, grind deaths 5 -> 1
@@ -743,9 +770,73 @@ POLY_XORN = True
 STAIR_BOULDER_FIX = True
 STAIR_BOULDER_WAIT = 300
 
+# --- stall fixes (ported from hed 6ee98468; dive_logic._stall_*): dives stuck on one level ---
+# The BFS never enters a boulder square nor the square of a monster fight2 won't melee (molds, floating eyes, gas
+# spores, blobs, jellies; also remembered out of sight, SESSILE_MEMORY), so one of those in a corridor or on the
+# stairs walls the way off for good. STALL_SESSILE: the stairs we need are cut off (or a hostile sessile monster
+# sits on them): hit what blocks the way -- molds, lichens, blobs, cold/spotted jellies in melee at >= 50% HP; a
+# floating eye only blind, blindfolded or with a thrown missile; a gas spore only at >= max(40, 60%) HP with
+# nothing tame or peaceful next to it and not in Minetown. hed-validated (GA-B3): dives stalled 3000+ turns on
+# Dlvl 1-4 6 -> 1 per 270 games.
+STALL_SESSILE = True
+# STALL_BOULDER: ...or boulders: push the first boulder on the way. hed: NOT validated (jf44 s12's boulders all have
+# rock behind them; pushing in the Mines untested) -- keep off.
+STALL_BOULDER = False
+# the way cut off this long first: detours turn up (hed: stalls this is for lasted 2000-19000 turns)
+STALL_MIN_TURNS = 1500
+STALL_MAX_TRIES = 12        # attempts on one blocker before leaving it alone for 300 turns
+STALL_STAIRS_WAIT = 20      # a mold/jelly (speed 0) on the stairs this long: it never leaves
+STALL_STAIRS_WAIT_MOVER = 400  # ...a floating eye, gas spore, lichen or blob: they drift off in time
+# STALL_DOWNSEARCH_TURNS (0: off): no '>' seen on a main-line level after this many turns of the dive trying to
+# descend: search the walls next to the largest unseen region (HIDDEN_SEARCH2's _search_toward_void) instead of
+# nearest-first. hed-validated (+0.50 net on the firing game).
+STALL_DOWNSEARCH_TURNS = 1000
+STALL_DOWNSEARCH_MAX_DEPTH = 10
+
+# --- DEEP_ITEMS (ported from hed 6ee98468; dive_logic.deep_items_strategy): on Medusa's level, the kit's
+# scare and cure items before the next dig or Elbereth ---
+#  - blind: a unicorn horn not known cursed (apply.c use_unihorn: an uncursed one fixes blindness ~65% of the
+#    time) -- a raven's claw re-blinds for d6 per hit, and a blind dust Elbereth holds 1 time in 3;
+#  - hostiles pressing (one adjacent, two within 2, or blind and hurt): a scare instrument (music.c: a tooled
+#    horn, a drum or a bugle makes every MR-0 monster within ~XL*10 distu flee with no timer -- ravens, snakes,
+#    eels) blown again after HORN_REFRESH turns or a hit; an unknown horn is improvised, its ray (a frost or
+#    fire horn) aimed at a moat neighbour (frost: 'The water freezes', a flood roll less);
+#  - a KNOWN scroll of scare monster dropped on the square we are about to dig (or, blind and hurt, where we
+#    stand): monmove.c onscary counts a scroll on the square for every monster but Rodney/minions/Angels/Riders,
+#    and unlike a dust Elbereth the pit doesn't delete it. We rest on it while blind or below
+#    DEEP_ITEMS_REST_UNTIL HP (at most DEEP_ITEMS_REST_MAX turns), then dig from it;
+#  - anywhere in the dive, at a quiet moment: a scroll of charging (not known cursed) on a known wand of
+#    digging that is known empty or down to 1 charge (read.c recharge: blessed 4-8 charges).
+DEEP_ITEMS = True
+DEEP_ITEMS_REST_UNTIL = 0.6
+DEEP_ITEMS_REST_MAX = 150
+DEEP_ITEMS_UNIHORN_TRIES = 3   # unicorn horn applications per blind spell
+# HORN_SCARE / BUGLE_SCARE (hed): a bugle is a scare instrument too -- music.c awaken_soldiers: every
+# non-mercenary within distu < XL*10 that fails resist(TOOL_CLASS) flees with no timer (minotaurs, MR 0, never
+# resist). It also wakes every mercenary on the level, so never on the castle level nor with a peaceful
+# watchman/soldier in view (opp_items.bugle_ok).
+HORN_SCARE = True
+BUGLE_SCARE = True
+# CL_BUGLE_WEST (hed, off): the castle's soldiers wake hostile but on the west side before any crossing they
+# can't reach us -- hed keeps it off.
+CL_BUGLE_WEST = False
+HORN_REFRESH = 15          # turns a flee (or a blow in range) holds before the horn is blown again, unless it attacks
+# MEDUSA_ZAP_FIRST (hed, with DEEP_ITEMS, WAND_RESERVE): on Medusa's level DEEP_ITEMS' gambles wait while
+# dig_first's next action is the kept wand of digging zapped down where we stand (one action, one flood roll).
+MEDUSA_ZAP_FIRST = True
+
+# CASTLE_TREASURY (hed/vlomshakov f84a81b port, castle_treasury.py): a wall-walker on the castle (CFP_XORN /
+# POLY_XORN) first walks through the walls to the tower cells (castle.des $place: one holds a chest with the
+# wand of wishing, locked 4 times in 5), opens it (key / #force with a sword / kick), takes the wand and names
+# it by one zap -- that wish and the rest are the teleport route's. East towers only (hed harness: west towers
+# cost moat crossings next to corner sharks). Budgets 240 actions / 400 turns, HP >= 45%.
+CASTLE_TREASURY = False
+
 # SOKOBAN_TRIP (off, power-route): when the grind would hand over to the dive, run the tour's Sokoban milestones first
 # (dive_logic._sokoban_trip): 4 random rings + 4 random wands + the prize (bag of holding / amulet of reflection) --
 # the ingredients the castle and teleport-control routes lack (TC ring in 4 of 61 real castle kits)
+# OFF stays (sok_ab_full 90p): -0.0662 pooled, both sets negative, dived 78 -> 59, depth25 56 -> 40 --
+# the foot trip through Dlvl 5-9 kills more weak characters than the loot rescues
 SOKOBAN_TRIP = False
 SOKOBAN_TRIP_TURNS = 8000
 # hypothesis: a python's AD_WRAP holds and drowns us in a pool exactly like an eel/kraken's, but the eel-hold
@@ -894,3 +985,60 @@ UNIHORN_CURE = True
 #   nhbot/jf_config.py ALTAR_NO_ENGRAVE + nhbot/agent.py can_engrave; /board/past_ideas #232/#280/#330/#293/#262/
 #   #282/#497 (this port beat its own parent in all seven placements, never reached a root)
 ALTAR_NO_ENGRAVE = True
+
+# ---------------------------------------------------------------------------
+# halcyon ports (survival branch, hidden-set validation pending)
+# ---------------------------------------------------------------------------
+
+# PRAYER_MODEL (nhmodel/prayer.py, pray.c semantics): the HP prayer only at pray.c's critically_low_hp
+# and only when the timeout posterior makes it as safe as the old 500-turn rule; the 'hp-doom' prayer at any
+# gap when P(heal) beats P(survive 3 turns); holds (Luck/record/anger) replace the fixed failure wait.
+PRAYER_MODEL = False
+# the doom prayer: P(heal) must beat P(survive 3 turns) by this margin, and be at least DOOM_MIN_P
+DOOM_MARGIN = 0.1
+DOOM_MIN_P = 0.3
+# PRAYER_RECORD_FIX (agent.pray): record a prayer (last_prayer_turn, the model's timeout/result) even when a
+# preempt during the prayer's step raises through it
+PRAYER_RECORD_FIX = True
+# RECORD_MODEL_FIX (nhmodel/prayer.py on_prayer): record +1 only for prayers without major trouble
+RECORD_MODEL_FIX = True
+# DEEP_PRAY_FIRST: diving at depth >= DEEP_PRAY_FIRST_DEPTH (not Gehennom, not polymorphed), critically low HP
+# and a model-safe prayer -> pray before casting/quaffing healing
+DEEP_PRAY_FIRST = False
+DEEP_PRAY_FIRST_DEPTH = 10
+
+# CAMP_HUNGER_GAP (0: off): a tool-less planned dive at depth <= CAMP_HUNGER_MAX_DEPTH after its first
+# hunger prayer uses this longer Weak/Fainting gap (halcyon measured it off, kept at 0)
+CAMP_HUNGER_GAP = 0
+CAMP_HUNGER_MAX_DEPTH = 12
+
+# HUNGER_DEEP: on the castle level (CASTLE_ONLY) eat carried food when Hungry (the moat monsters make
+# eat_from_inventory wait until the hero faints) and pray for hunger from HUNGER_DEEP_GAP
+HUNGER_DEEP = True
+HUNGER_DEEP_DEPTH = 10
+HUNGER_DEEP_CASTLE_ONLY = True
+HUNGER_DEEP_GAP = 850
+
+# DITCH_RETRY (dive_logic.ditch_pet_strategy): a pet ditch that ran out of time is retried
+# (DITCH_PET_TRIES attempts, DITCH_RETRY_WAIT turns between them) instead of ending for good
+DITCH_RETRY = False
+
+# LONE_WEAK_THREAT (dive_logic.elbereth_rest): the lone-weak fight exemption (mlevel <= 2) holds only while
+# the monster's own melee can't kill us within LONE_WEAK_TURNS turns with probability >= LONE_WEAK_PDIE --
+# rothes, giant ants/bats and were-forms are mlevel <= 2 but lethal at low HP. Halcyon ships it off pending
+# an A/B; we enable it (our shallow deaths s28/s39 died fighting lone weak monsters at low HP) and measure.
+LONE_WEAK_THREAT = False
+LONE_WEAK_TURNS = 3
+LONE_WEAK_PDIE = 0.1
+
+# WISH_CHARGING_FIRST (hed port, tele_route.py): a wand of wishing's first wish is '2 blessed scrolls of
+# charging'; the route's wishes then zap the wand down to (x:0), and one scroll is read on it before any wrest.
+# mkobj.c: spe = rnd(3), recharged = 0; read.c recharge(): lim 3 for wishing, a blessed charge sets spe to 3 when
+# spe < 3, and a second recharge explodes it. So c + 2 wishes instead of c: a 1-charge wand (1 in 3) got only
+# the teleport-control ring before.
+WISH_CHARGING_FIRST = False
+# ROUTE_GLOVES_FIX (hed port, tele_route.py): cursed gloves or a welded weapon block the teleport-control ring
+# without using a move ('You cannot remove your gloves to put on the ring.'), and the route's ring step retried
+# forever (fs7-k6 s9: 385k steps after the castle wand). Then the next wish is a blessed scroll of remove curse,
+# read at once; with no wish left the step yields instead of looping.
+ROUTE_GLOVES_FIX = False

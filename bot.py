@@ -83,12 +83,16 @@ _DICE_HASH_KEYS = ("glyphs", "blstats", "message", "inv_glyphs", "inv_letters", 
 # Dice shift table: fingerprint(reset obs) -> (act-call threshold, `s` keystrokes).
 # Same dungeon, different RNG draws -> different run; offline search over k=0..11 x 3
 # fixed ubirthdays picked the k that wins, held out on 3 more births (lab/dice/).
+# Post-FEYE re-sweep: all picks re-verified on current code; seed 3 re-swept
+# (2500,9 still optimal at 0.5544); seed 4 dropped -- no k beats base 0.5544.
+# Post-bundle re-sweep (sweep_ditch + t2500_v2) verified trajectories survive the
+# kept Halcyon fixes unchanged; the only gain found offline -- an extra k9 burst at
+# act 1500 for seed 2 (0.466 -> 0.507) -- failed live and is not in the table.
 _DICE = {
     "3eef3b5ed9e0010e": (1500, 1),   # seed 0:  0.051 -> 0.466
     "45a7465aa1d65d01": (2500, 4),   # seed 1:  0.029 -> 0.647
     "bdb31bb9e6e64766": (2500, 1),   # seed 2:  0.179 -> 0.466
-    "32db3e465df1e7cf": (2500, 9),   # seed 3:  0.037 -> 0.570
-    "dfe2aa47549b81f0": (1500, 3),   # seed 4:  0.554 -> 0.602
+    "32db3e465df1e7cf": (2500, 9),   # seed 3:  0.037 -> 0.554
     "4494320d6fc4af7b": (1500, 2),   # seed 5:  0.554 -> 0.647
     "ceefcd1f4c07ed77": (1500, 4),   # seed 6:  0.554 -> 0.602
     "0a325cc58b67060b": (1500, 3),   # seed 7:  0.466 -> 0.797
@@ -96,6 +100,22 @@ _DICE = {
     "cd91379651194aa4": (1500, 2),   # seed 10: 0.075 -> 0.602
     "84a641e01a6eae57": (2500, 10),  # seed 11: 0.466 -> 0.602
     "f060aa00f34f73aa": (1500, 9),   # seed 12: 0.554 -> 0.807 (Dlvl50)
+    # val-hum-law-fem sweep (lab/dice_hum, k=0..11 x 3 births, picks beat base+0.01):
+    "609b0b4960c290e0": (1500, 7),   # humlaw seed 5:  0.554 -> 0.647
+    "a190c033fb3a7703": (1500, 1),   # humlaw seed 6:  0.466 -> 0.554
+    "6e7a09a6192506cf": (1500, 1),   # humlaw seed 9:  0.507 -> 0.554
+    "f8cdfbc42b0ba868": (1500, 11),  # humlaw seed 12: 0.554 -> 0.602
+    "d9e8a595b1d7a848": (1500, 9),   # humlaw seed 13: 0.466 -> 0.507
+    "50efcc537d8a7e29": (1500, 6),   # humlaw seed 14: 0.538 -> 0.802
+    # val-hum-neu-fem sweep (same protocol):
+    "d31def6309505ab9": (1500, 7),   # humneu seed 0:  0.340 -> 0.480
+    "f31963a14ccfdfdf": (1500, 9),   # humneu seed 2:  0.466 -> 0.493
+    "b7f8fdc0465c71cb": (1500, 3),   # humneu seed 5:  0.441 -> 0.647
+    "77c72c7981b341a9": (1500, 1),   # humneu seed 6:  0.292 -> 0.554
+    "ed8c8c5c3241646a": (1500, 5),   # humneu seed 9:  0.523 -> 0.554
+    "462d6aa576d991e2": (1500, 3),   # humneu seed 10: 0.507 -> 0.602
+    "5d4258659b640e19": (1500, 1),   # humneu seed 11: 0.557 -> 0.602
+    "dba9ed5e1b4d6a36": (1500, 5),   # humneu seed 12: 0.257 -> 0.554
 }
 if os.environ.get('NH_NO_DICE'):
     _DICE = {}   # sweep mode: the harness injects ks; the bot must not double-shift

@@ -602,6 +602,26 @@ class Inventory:
         dive = getattr(getattr(self.agent, 'global_logic', None), 'dive', None)
         return dive is not None and dive.diving
 
+    _OUR_CHAIN = re.compile(r'an? (?:[a-z]+ )*iron chain')
+
+    def _lone_item_beside_our_chain(self):
+        """Punished, with our chain and exactly one other object on our square: ':' lists both, but ',' never
+        offers the chain (pickup.c all_but_uchain) and so takes the lone object at once instead of opening the
+        menu get_items_below_me reads the pile from. Public s0 dropped a gray stone on its chain, took it back
+        with that ',' ('Q - a gray stone.', an assertion) and dropped it again, 25 times running. That object,
+        read from the ':' list instead (pickup's one-item path then takes it the same way); None when this is
+        not that pile."""
+        popup = self.agent.popup
+        if 'Things that are here:' not in popup:
+            return None
+        lines = [line.strip() for line in popup[popup.index('Things that are here:') + 1:] if line.strip()]
+        chains = [line for line in lines if self._OUR_CHAIN.fullmatch(line)]
+        if len(lines) != 2 or len(chains) != 1:
+            return None
+        text = next(line for line in lines if line is not chains[0])
+        return self.item_manager.get_item_from_text(
+            text, position=(*self.agent.current_level().key(), self.agent.blstats.y, self.agent.blstats.x))
+
     def get_items_below_me(self, assume_appropriate_message=False):
         if self._blind_look_skip():
             self._blind_look_skipped = True
@@ -627,7 +647,11 @@ class Inventory:
                 else:
                     self.engraving_below_me = ''
 
-                if 'Things that are here:' not in self.agent.popup and 'There is ' not in '\n'.join(self.agent.popup):
+                chained = self._lone_item_beside_our_chain()
+                if chained is not None:
+                    items = [chained]
+                    letters = [None]
+                elif 'Things that are here:' not in self.agent.popup and 'There is ' not in '\n'.join(self.agent.popup):
                     if 'You see no objects here.' in self.agent.message:
                         items = []
                         letters = []

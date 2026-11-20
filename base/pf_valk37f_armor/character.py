@@ -281,6 +281,8 @@ class Character:
         self.is_lycanthrope = False
         # 'rat' / 'jackal' / 'wolf' (were.c were_beastie families), None if unknown (LYCAN_FIXES)
         self.lycanthrope_kind = None
+        # last 'You feel purified.' turn: read by jf_config.LYCAN_AVOID (post-cure were-bite window)
+        self.were_cured_turn = -10 ** 9
         # HP before the current polymorph: while polymorphed, blstats show the form's HP, and that form
         # dying only rehumanizes us (polyself.c rehumanize) back to this HP (LYCAN_FIXES)
         self.hp_before_poly = None
@@ -292,6 +294,19 @@ class Character:
         # it stops routing to safe resistance corpses once we have it; an extrinsic-only source (a worn ring) prints
         # nothing and is not tracked here, so that case just keeps eating a free, risk-free corpse for no benefit
         self.poison_resistant = False
+        # intrinsic telepathy from a floating eye corpse (eat.c cpostfx), lost to sit.c attrcurse: read by
+        # jf_config.FEYE_TELE (an extrinsic source -- helm of telepathy, amulet of ESP -- prints nothing and is not seen)
+        self.telepathic = False
+
+    def _track_telepathy(self, msg):
+        # eat.c cpostfx TELEPAT: 'You feel a strange mental acuity.' ('in touch with the cosmos.' hallucinating);
+        # sit.c attrcurse takes it away with 'Your senses fail!'
+        if 'You feel a strange mental acuity' in msg or 'You feel in touch with the cosmos' in msg:
+            if not self.telepathic:
+                self.agent.log('INTRINSIC telepathy')
+            self.telepathic = True
+        if 'Your senses fail' in msg:
+            self.telepathic = False
 
     def _track_teleport(self, msg):
         # eat.c cpostfx: 'You feel very jumpy.' (hallucinating: 'diffuse.') gives teleportitis, 'You feel in control
@@ -325,6 +340,7 @@ class Character:
             if 'You feel purified.' in self.agent.message:
                 self.is_lycanthrope = False
             self._track_teleport(self.agent.message)
+            self._track_telepathy(self.agent.message)
             self._track_poison_resistance(self.agent.message)
             return
         # every message since the last update: infections and changes happen inside atomic operations
@@ -336,6 +352,7 @@ class Character:
         self._history_seen = len(history)
         msg = ' '.join(history[start:] + [self.agent.message])
         self._track_teleport(msg)
+        self._track_telepathy(msg)
         self._track_poison_resistance(msg)
         # infected while fainted or asleep the message is 'You dream that you feel feverish.' (75 of 591
         # infections in the dev runs): the old exact match never saw it, so no cure prayer came and the
@@ -360,6 +377,7 @@ class Character:
         if 'You feel purified' in msg[max(pos, 0):]:
             self.is_lycanthrope = False
             self.lycanthrope_kind = None
+            self.were_cured_turn = self.agent.blstats.time
             self.agent.log('LYCAN cured')
         polymorphed = self.prop.polymorph
         if polymorphed and not self._was_polymorphed:

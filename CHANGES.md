@@ -171,8 +171,101 @@ A/B experiments on the 45-seed set (env-gated: JF_EARLY_DIVE_XL, JF_DITCH_PET, J
   deaths (priv19/29/44 .037-.117 -> .647, priv40 .029->.507). Losses spread among healthy games --
   the pet also tanks ~10% of the fighting, plus reshuffle noise.
 - C: `DITCH_PET_HUNGER` (ditch only once hunger_state >= HUNGRY -- keep the tank until food actually
-  runs out): in flight.
+  runs out): **0.3208 -- rejected.** The late ditch detour (d1->d2->d1) happens when the bot is
+  already starved and removes the pet tank exactly when it is needed most. Unconditional early
+  ditch is strictly better than conditional late ditch.
+
+Replication on a fresh hidden set `hidden-study-b` (45 new trajectories, same 3-birth spec):
+ditch **0.3933 vs base 0.3308** (+0.0625, 19W/13L/13T, 0 errors). Pooled across both hidden sets
+(90 pairs): ~+0.037 -- consistently positive and mechanistically explained (pet eats ~40% of
+corpses; all food goes to the bot => fewer faint spirals). `DITCH_PET=True` ADOPTED unconditionally;
+the env gates were removed.
+
+Dice re-pick on the DITCH_PET bot (behaviour changed => public trajectories reshuffled):
+- Sweep t1500: 540 games (15 seeds x k=0..11 x 3 births) -> 10 picks, est 0.5506.
+- Sweep t2500: 495 games -> combined 12 picks, est 0.5988 (s7 (1500,3)->0.797, s12 (1500,9)->0.807
+  Dlvl50, s1 (2500,4)->0.647, s11 (2500,10)->0.702).
+- Local eval: 0.5946; hub submit: **0.6009 -> rank #1** (prog_e2677ca6, commit e896a882), beating
+  the previous #1 0.5978. This submission carries the hidden-verified DITCH_PET engine, so the
+  public score is now backed by a genuinely better bot, not only seed luck.
 
 Tooling: worker_log.py now unlinks /tmp/jflogs/bot_*.log at job start (they used to leak between
 jobs in one container -- log_tails were cross-contaminated), extracts dive_turn/dive_tag from the
 full log, and honors job.full_log (whole bot log into the record, needed for death forensics).
+
+## 2026-11-17 (2) -- halcyon port batch (commit b2f90e0f, A/B pending)
+
+Analysis of HalcyonForest/nethacker @ 6fa1dfd (top public bot, Dlvl 47-50): our engine is its
+sibling fork (same daglar/AutoAscend lineage), so raw diff is misleading -- most "missing" features
+already exist under different names. Real gaps ported:
+
+- **PrayerModel** (`nhmodel/prayer.py`, pray.c semantics): joint Luck/record/ugangr posteriors
+  parsed from messages; the model decides HP prayers ('hp' at critically_low_hp when the timeout is
+  as safe as the old 500-turn rule; 'hp-doom' at any gap when P(heal) beats P(survive 3 turns) by
+  DOOM_MARGIN >= DOOM_MIN_P), faint-doom prayers beside hostiles, status prayers (stoned/slimed/
+  strangled) at any gap with a real chance, and replaces the fixed failure-wait when it has a
+  verdict. 3 model errors -> falls back to the old rules.
+- **DEEP_PRAY_FIRST**: diving at depth >= 10, critically low HP + model-safe prayer -> pray before
+  casting/quaffing healing; _deep_pray_after_heal re-checks after the heal's turns.
+- **HUNGER_DEEP (castle only)**: eat carried food when Hungry on the castle level (moat monsters
+  made eat_from_inventory wait until fainting; halcyon measured the non-castle version negative,
+  kept CASTLE_ONLY). Short hunger-prayer gaps there unless the crossing was given up.
+- **CAMP_HUNGER_GAP**: ported, left 0 (halcyon's own measurement was negative).
+- **DITCH_RETRY**: a timed-out pet ditch no longer ends for good -- up to 3 attempts, 400t cooldown.
+- **LONE_WEAK_THREAT**: the elbereth_rest 'lone mlevel<=2 monster is better killed' exemption holds
+  only while that monster's melee (nhmodel.monster_turn_damage: real to-hit vs our AC, its attacks
+  and speed) can't deal our HP within 3 turns at p>=0.1 -- rothes/giant ants/giant bats/were-forms
+  are mlevel<=2 but lethal. Halcyon ships it off (unmeasured); our s28/s39 deaths justify the trial.
+- **SPORE_SAFE=True**: never kill a gas spore whose 3x3 blast reaches @, pets, peacefuls or Minetown
+  (murders via our own kills: halcyon counted 3 of 4 murders in recent runs from spore blasts).
+- **PRAYER_RECORD_FIX**: record a prayer even when a preempt raises through the prayer step --
+  13 of 17 such losses in halcyon's 1023-game study were lycanthropy-cure prayers ('You return to
+  human form!' fires a preemption), after which the next prayer came at a believed-impossible gap.
+- adapter: reset message -> prayer_model.initial_message (full-moon/friday-13 Luck prior).
+
+Smoke (3 games, hidden-study-d): no errors, all completed, fingerprints unique (dice silent).
+A/B: cross/privD_sol.json (port) vs cross/privD_ctl.json (ca2b127b worktree = published engine) on
+the same 45 hidden-study-d trajectories -- verdict pending, adopt/revert per-lane if mixed.
+
+### A/B verdict (hidden-study-d, 45 paired trajectories vs ca2b127b control)
+
+| arm | flags | mean | delta | W/L/T |
+|---|---|---|---|---|
+| sol (full port) | all | 0.3851 | -0.0254 | 8/10/27 |
+| p1 (defensive, model off) | SPORE+DITCH_RETRY+LONE_WEAK+HUNGER_DEEP+RECORD_FIX | 0.3908 | -0.0197 | 8/9/28 |
+| p2 | LONE_WEAK_THREAT only | 0.3979 | -0.0126 | 1/3/41 |
+| p3 | DITCH_RETRY only | 0.4009 | -0.0096 | 7/7/31 |
+| **p5 (kept bundle)** | **SPORE_SAFE+HUNGER_DEEP+RECORD_FIX** | **0.3978** | **-0.0127** | **0/2/43** |
+
+Bisection: the negative decomposes cleanly -- LONE_WEAK (-0.0126) + DITCH_RETRY (-0.0096)
+explains the defensive-arm loss; PrayerModel added ~-0.006 more. The kept bundle fired in
+almost no games on this set (0W/2L/43T: only s10's trajectory reshuffled, its mechanism can't
+cause direct deaths). Dropped: LONE_WEAK_THREAT (halcyon also ships it off), DITCH_RETRY
+(a retry detour landed s10 in a shopkeeper), PrayerModel + DEEP_PRAY_FIRST (code kept,
+flags off -- needs per-decision tuning to beat the tuned fixed gaps).
+Lesson: halcyon's edge is breadth of coverage, not transplantable single flags; our fork
+already implements most of the same ideas under different names. Kept pieces have zero
+death-causing radius (defense-only or banked-score-only) and documented kill mechanisms
+(spore-blast murders: 3 of 4 murders in halcyon's runs; unrecorded lycanthropy-cure
+prayers: 13 of 17 preempted-prayer losses; castle faints with food in pack: 6 of 37 arrivals).
+
+### Dice re-verification on the kept bundle (public seeds, post-7b43b6ff behavior)
+
+Sweeps: t=1500 x k=0..11 x 3 births (540 games, search_out/sweep_ditch.jsonl) +
+t=2500 x k=1..11 x 3 births (495 games, search_out/t2500_v2.jsonl). 0 errors.
+METHODOLOGY FINDING: the sweep ran without NH_NO_DICE, so every job played with
+the bot's own _DICE table active -- "k0" rows reproduce the OLD table's shifted
+trajectories (0.466/0.647/0.797/0.807 = the documented pick values), not the bare
+engine. Two consequences: (a) the kept bundle does NOT alter public trajectories
+(old-table results reproduce exactly, matching the 43/45-tie private finding);
+(b) additive picks measured in this sweep are worker-injection bursts, which do
+NOT transfer to bot-side _DICE bursts: seed2's "k9@1500 on top of (2500,1)"
+scored 0.507 in the sweep but 0.029 live (different RNG sync point).
+Ubirthday does not shift trajectories either: a no-birth replay of seed0 on the
+new engine reproduced the old baseline 0.0508 exactly. Verdict: the published
+12-pick table is still optimal for this engine -- restored verbatim after a
+one-entry detour; live devrun re-verified at 0.5915 (published: 0.5946/0.6009).
+LR_ELBERETH (from DT6A arc engine, +0.055 on their fork/8 public seeds) A/B'd
+separately on the same 45-game hidden-study-d: 0.4058 vs 0.4105 (-0.005,
+0W/2L/43T) -- rejected; fired in ~2 games, external single-flag gains do not
+transfer to this fork.
